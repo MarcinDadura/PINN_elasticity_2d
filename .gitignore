@@ -1,0 +1,19 @@
+# Środowisko wirtualne
+venv/
+.env
+
+# Pliki tymczasowe Pythona i cache
+__pycache__/
+*.pyc
+
+# Pliki wygenerowane przez Jupytera
+.ipynb_checkpoints/
+
+# Wyniki eksperymentów i wykresy (żeby nie zapychać repozytorium dużymi plikami)
+results/
+*.npz
+*.png
+*.pdf
+
+# Systemowe
+.DS_Store

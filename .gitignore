@@ -15,5 +15,10 @@ results/
 *.png
 *.pdf
 
+models/
+*.npz
+*.png
+*.pdf
+
 # Systemowe
 .DS_Store

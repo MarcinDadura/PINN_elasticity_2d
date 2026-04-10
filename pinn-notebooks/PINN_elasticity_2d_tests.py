@@ -63,7 +63,7 @@ def train_and_save_baseline(e_target, epochs):
     axes[1].legend()
 
     plt.tight_layout()
-    plot_path = os.path.join(f"models", "baseline_plot.png")
+    plot_path = os.path.join(f"models", f"baseline_plot_{e_target}.png")
     plt.savefig(plot_path)
     print(f"Wykres przebiegu nauki zapisano do: {plot_path}")
     return trained_pinn, train_time
@@ -142,26 +142,37 @@ def compute_stats(u_b, v_b, u_p, v_p):
 
 # --- Funkcja do generowania wykresów (wyciągnięta dla reużywalności) ---
 def save_comparison_plot(u_b, v_b, u_p, v_p, e_test, suffix=""):
-    fig, axes = plt.subplots(2, 2, figsize=(18, 15))
-    fig.suptitle(f'Porównanie modeli dla materiału E = {e_test}', fontsize=18)
+    u_min = min(np.min(u_b), np.min(u_p))
+    u_max = max(np.max(u_b), np.max(u_p))
+    v_min = min(np.min(v_b), np.min(v_b))
+    v_max = max(np.max(v_b), np.max(v_p))
 
+    fig, axes = plt.subplots(2, 2, figsize=(18, 15))
+    fig.suptitle(f'Porównanie modeli dla materiałów o E = {e_test}', fontsize=20)
+
+    # Parametry dla osi U (wspólne vmin i vmax)
+    u_kwargs = {'extent': [0, 1, 0, 1], 'origin': 'lower', 'cmap': 'viridis', 'vmin': u_min, 'vmax': u_max}
+    
     # Wiersz 1: U
-    im0 = axes[0, 0].imshow(u_b, extent=[0,1,0,1], origin='lower', cmap='viridis')
-    axes[0, 0].set_title("Baseline: Przemieszczenie U")
+    im0 = axes[0, 0].imshow(u_b, **u_kwargs)
+    axes[0, 0].set_title(f"Baseline: Przemieszczenie U {suffix}")
     fig.colorbar(im0, ax=axes[0, 0])
 
-    im1 = axes[0, 1].imshow(u_p, extent=[0,1,0,1], origin='lower', cmap='viridis')
-    axes[0, 1].set_title("Parametric: Przemieszczenie U")
+    im1 = axes[0, 1].imshow(u_p, **u_kwargs)
+    axes[0, 1].set_title(f"Parametric: Przemieszczenie U {suffix}")
     fig.colorbar(im1, ax=axes[0, 1])
 
-    # Wiersz 2: V
-    im3 = axes[1, 0].imshow(v_b, extent=[0,1,0,1], origin='lower', cmap='plasma')
-    axes[1, 0].set_title("Baseline: Przemieszczenie V")
-    fig.colorbar(im3, ax=axes[1, 0])
+    # Parametry dla osi V (wspólne vmin i vmax)
+    v_kwargs = {'extent': [0, 1, 0, 1], 'origin': 'lower', 'cmap': 'viridis', 'vmin': v_min, 'vmax': v_max}
 
-    im4 = axes[1, 1].imshow(v_p, extent=[0,1,0,1], origin='lower', cmap='plasma')
-    axes[1, 1].set_title("Parametric: Przemieszczenie V")
-    fig.colorbar(im4, ax=axes[1, 1])
+    # Wiersz 2: V
+    im2 = axes[1, 0].imshow(v_b, **v_kwargs)
+    axes[1, 0].set_title(f"Baseline: Przemieszczenie V {suffix}")
+    fig.colorbar(im2, ax=axes[1, 0])
+
+    im3 = axes[1, 1].imshow(v_p, **v_kwargs)
+    axes[1, 1].set_title(f"Parametric: Przemieszczenie V {suffix}")
+    fig.colorbar(im3, ax=axes[1, 1])
 
     plt.tight_layout()
     plt.savefig(f"models/comparison_E{e_test}_{suffix}.png", dpi=150)
@@ -208,6 +219,43 @@ def evaluate_and_compare(model_b, model_p, e_test, report_file, iter, resolution
     
     return u_b_np, v_b_np, u_p_np, v_p_np
 
+def export_to_vtk(filename, u, v, resolution, length=1.0):
+    """
+    Zapisuje pola przemieszczeń do pliku ASCII VTK.
+    Dane są zapisywane jako pole wektorowe (U, V, 0.0), co ułatwia użycie 
+    filtru 'Warp By Vector' w programie ParaView.
+    """
+    points_count = resolution * resolution
+    spacing = length / (resolution - 1)
+    
+    # Siatka grid_x, grid_y była generowana z indexing="ij", 
+    # więc macierze u i v mają kształt [x_idx, y_idx].
+    # Format VTK STRUCTURED_POINTS wymaga, by współrzędna X zmieniała się najszybciej.
+    # Transpozycja (.T) zmienia układ na [y_idx, x_idx], a .flatten() spłaszcza to
+    # iterując od najgłębszego poziomu (czyli najszybciej idzie po X).
+    u_flat = u.T.flatten()
+    v_flat = v.T.flatten()
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+        # Nagłówek VTK
+        f.write("# vtk DataFile Version 3.0\n")
+        f.write("PINN 2D Elasticity Displacement Vector Field\n")
+        f.write("ASCII\n")
+        f.write("DATASET STRUCTURED_POINTS\n")
+        
+        # Wymiary siatki (Z = 1 dla 2D)
+        f.write(f"DIMENSIONS {resolution} {resolution} 1\n")
+        f.write("ORIGIN 0.0 0.0 0.0\n")
+        f.write(f"SPACING {spacing:.6f} {spacing:.6f} 1.0\n")
+        
+        # Zapisanie danych punktowych (wektorowych)
+        f.write(f"POINT_DATA {points_count}\n")
+        f.write("VECTORS displacement float\n")
+        
+        # Wypisanie wartości: X Y Z (gdzie Z w 2D to 0.0)
+        for i in range(points_count):
+            f.write(f"{u_flat[i]:.6e} {v_flat[i]:.6e} 0.0\n")
+
 # ── 4. Uruchomienie Główne ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -253,7 +301,7 @@ if __name__ == "__main__":
         u_b_list, v_b_list = [], []
         # Uruchomienie porównania
         for i in range(5):
-            ub, vb, up, vp = evaluate_and_compare(model_baseline, model_param, e_test=e_val, iter_idx=i, report_file=REPORT_FILE)
+            ub, vb, up, vp = evaluate_and_compare(model_baseline, model_param, e_test=e_val, iter=i, report_file=REPORT_FILE)
             u_b_list.append(ub)
             v_b_list.append(vb)
             u_p_list.append(up)
@@ -280,5 +328,13 @@ if __name__ == "__main__":
 
         # 4. Wykres dla średnich
         save_comparison_plot(u_b_avg, v_b_avg, u_p_avg, v_p_avg, e_val, suffix="_AVERAGE")
+
+        # 5. Eksport średnich wyników do ParaView (VTK)
+        vtk_base_file = f"models/displacement_baseline_E{e_val}.vtk"
+        vtk_param_file = f"models/displacement_param_E{e_val}.vtk"
+        
+        export_to_vtk(vtk_base_file, u_b_avg, v_b_avg, resolution=1000, length=1.0)
+        export_to_vtk(vtk_param_file, u_p_avg, v_p_avg, resolution=1000, length=1.0)
+        print(f" [INFO] Zapisano pliki VTK dla ParaView: {vtk_base_file}, {vtk_param_file}")
     
     print(f"\n[SUKCES] Pełny raport został zapisany w pliku: {REPORT_FILE}")
